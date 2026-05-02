@@ -58,7 +58,7 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     const fileBuffer = fs.readFileSync(req.file.path);
 
     // 📄 Parse PDF
-    const data = await pdfParse.default(fileBuffer);
+    const data = await pdfParse(fileBuffer);
 
     // 🧠 Extract text safely
     const extractedText = data.text || "";
@@ -66,8 +66,8 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     // 📤 Send response
     res.json({
       message: "PDF processed successfully",
-      preview: extractedText.slice(0, 500) // smaller preview for testing
-    });
+      preview: extractedText.slice(0, 500)
+});
 
   } catch (error) {
     console.error("Upload error:", error);
@@ -91,6 +91,43 @@ function simulateAIRewrite(text, tone) {
     return `🚀 Built something impactful: ${text}`;
   }
   return text;
+}
+
+function extractStructuredData(text) {
+  const lines = text.split("\n").map(l => l.trim());
+
+  let name = "";
+  let email = "";
+  let skills = [];
+
+  // Extract name (first non-empty line)
+  name = lines.find(line => line.length > 0) || "";
+
+  // Extract email
+  const emailMatch = text.match(/\S+@\S+\.\S+/);
+  email = emailMatch ? emailMatch[0] : "";
+
+  // Extract skills (very basic logic)
+  const skillLine = lines.find(line =>
+    line.toLowerCase().includes("skill")
+  );
+
+  if (skillLine) {
+    skills = skillLine
+      .split(":")[1]
+      ?.split(",")
+      .map(s => s.trim()) || [];
+  }
+
+  return {
+    name,
+    email,
+    summary: "",
+    skills,
+    projects: [],
+    education: [],
+    experience: []
+  };
 }
 
 // 10. Start server
