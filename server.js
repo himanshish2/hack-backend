@@ -38,36 +38,36 @@ app.post("/api/rewrite", (req, res) => {
     res.json({ rewrittenText });
 
   } catch (error) {
-    console.error(error);
+    console.error("Rewrite error:", error);
     res.status(500).json({ error: "Something went wrong" });
   }
 });
 
-//uploading stuff
+// 8. Upload + PDF parse
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
-    // 🔍 Debug log (keep this for now)
     console.log("File received:", req.file);
 
-    // ❌ If no file
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // 📂 Read uploaded file
     const fileBuffer = fs.readFileSync(req.file.path);
-
-    // 📄 Parse PDF
     const data = await pdfParse(fileBuffer);
 
-    // 🧠 Extract text safely
     const extractedText = data.text || "";
 
-    // 📤 Send response
+    // 🧠 Convert to structured JSON
+    const structuredData = extractStructuredData(extractedText);
+
+    // 🧹 OPTIONAL: delete uploaded file (important in real apps)
+    fs.unlinkSync(req.file.path);
+
     res.json({
       message: "PDF processed successfully",
-      preview: extractedText.slice(0, 500)
-});
+      preview: extractedText.slice(0, 300),
+      structuredData
+    });
 
   } catch (error) {
     console.error("Upload error:", error);
@@ -93,30 +93,32 @@ function simulateAIRewrite(text, tone) {
   return text;
 }
 
+// 10. Extract structured data
 function extractStructuredData(text) {
-  const lines = text.split("\n").map(l => l.trim());
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
   let name = "";
   let email = "";
   let skills = [];
 
-  // Extract name (first non-empty line)
-  name = lines.find(line => line.length > 0) || "";
+  // Name = first line
+  name = lines[0] || "";
 
-  // Extract email
+  // Email (regex)
   const emailMatch = text.match(/\S+@\S+\.\S+/);
   email = emailMatch ? emailMatch[0] : "";
 
-  // Extract skills (very basic logic)
+  // Skills detection
   const skillLine = lines.find(line =>
     line.toLowerCase().includes("skill")
   );
 
-  if (skillLine) {
+  if (skillLine && skillLine.includes(":")) {
     skills = skillLine
       .split(":")[1]
-      ?.split(",")
-      .map(s => s.trim()) || [];
+      .split(",")
+      .map(s => s.trim())
+      .filter(Boolean);
   }
 
   return {
@@ -130,7 +132,7 @@ function extractStructuredData(text) {
   };
 }
 
-// 10. Start server
+// 11. Start server
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
 });
