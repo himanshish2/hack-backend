@@ -1,41 +1,38 @@
-
+// 1. Import packages
+const express = require("express");
+const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
-
-// 1. Import packages
-const upload = multer({ dest: "uploads/" });
-const express = require("express");
-const cors = require("cors");
 require("dotenv").config();
 
 // 2. Create app
 const app = express();
 
-// 3. Middleware (must come AFTER app is created)
+// 3. Middleware
 app.use(cors());
 app.use(express.json());
 
-// 4. Port
+// 4. Multer setup
+const upload = multer({ dest: "uploads/" });
+
+// 5. Port
 const PORT = process.env.PORT || 5000;
 
-// 5. Test route
+// 6. Test route
 app.get("/", (req, res) => {
-  res.send("This is a POST endpoint. Use Postman.");
+  res.send("Server running 🚀");
 });
 
-
-// 6. Rewrite API (MOCK AI)
+// 7. Rewrite API
 app.post("/api/rewrite", (req, res) => {
   try {
-    const { text, tone, section } = req.body;
+    const { text, tone } = req.body;
 
-    // Validation
     if (!text || !tone) {
       return res.status(400).json({ error: "Text and tone are required" });
     }
 
-    // Simulated AI response
     const rewrittenText = simulateAIRewrite(text, tone);
 
     res.json({ rewrittenText });
@@ -46,39 +43,42 @@ app.post("/api/rewrite", (req, res) => {
   }
 });
 
+// 8. Upload + PDF parse
+app.post("/api/upload", upload.single("resume"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
-// 7. Fake AI function
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const data = await pdfParse(fileBuffer);
+
+    res.json({
+      message: "PDF processed successfully",
+      extractedText: data.text.slice(0, 1000)
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to process PDF" });
+  }
+});
+
+// 9. Mock AI function
 function simulateAIRewrite(text, tone) {
   if (tone === "professional") {
     return `Developed and delivered: ${text}`;
   }
-
   if (tone === "casual") {
     return `Basically, I worked on this: ${text}`;
   }
-
   if (tone === "bold") {
     return `🚀 Built something impactful: ${text}`;
   }
-
   return text;
 }
 
-
-// 8. Start server
+// 10. Start server
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
-const express = require("express");
-
-const app = express();
-
-const PORT = 5000;
-
-app.get("/", (req, res) => {
-  res.send("Server is running 🚀");
-});
-
-app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
-
 });
