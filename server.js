@@ -96,17 +96,45 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
 async function callAIForParsing(text) {
   try {
     const prompt = `
-Extract structured JSON from this resume.
+You are an expert resume parser.
 
-Return ONLY valid JSON:
+Extract structured JSON from the resume.
+
+RULES:
+- Return ONLY valid JSON (no explanation, no text)
+- Fill missing fields with empty values
+- Be smart in extracting skills, projects, education, and experience
+- Convert bullet points into arrays
+- Infer project tech stack if mentioned
+
+FORMAT:
 {
   "name": "",
   "email": "",
-  "summary": "",
-  "skills": [],
-  "projects": [],
-  "education": [],
-  "experience": []
+  "summary": "2 sentence professional summary",
+  "skills": ["", ""],
+  "projects": [
+    {
+      "title": "",
+      "description": "",
+      "tech": []
+    }
+  ],
+  "education": [
+    {
+      "degree": "",
+      "college": "",
+      "year": ""
+    }
+  ],
+  "experience": [
+    {
+      "role": "",
+      "company": "",
+      "duration": "",
+      "points": []
+    }
+  ]
 }
 
 Resume:
@@ -132,7 +160,13 @@ ${text.slice(0, 4000)}
     // 🧹 clean markdown if exists
     aiText = aiText.replace(/```json|```/g, "").trim();
 
-    return JSON.parse(aiText);
+    try {
+  const cleaned = aiText.replace(/```json|```/g, "").trim();
+  return JSON.parse(cleaned);
+} catch (err) {
+  console.error("JSON parse failed:", aiText);
+  return null;
+}
 
   } catch (error) {
     console.error("AI error:", error.response?.data || error.message);
