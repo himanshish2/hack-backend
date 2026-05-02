@@ -43,24 +43,39 @@ app.post("/api/rewrite", (req, res) => {
   }
 });
 
-// 8. Upload + PDF parse
+//uploading stuff
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
+    // 🔍 Debug log (keep this for now)
+    console.log("File received:", req.file);
+
+    // ❌ If no file
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    // 📂 Read uploaded file
     const fileBuffer = fs.readFileSync(req.file.path);
-    const data = await pdfParse(fileBuffer);
 
+    // 📄 Parse PDF
+    const data = await pdfParse.default(fileBuffer);
+
+    // 🧠 Extract text safely
+    const extractedText = data.text || "";
+
+    // 📤 Send response
     res.json({
       message: "PDF processed successfully",
-      extractedText: data.text.slice(0, 1000)
+      preview: extractedText.slice(0, 500) // smaller preview for testing
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to process PDF" });
+    console.error("Upload error:", error);
+
+    res.status(500).json({
+      error: "Failed to process PDF",
+      details: error.message
+    });
   }
 });
 
