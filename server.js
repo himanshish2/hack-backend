@@ -1,4 +1,6 @@
-// 1. Imports
+// ==========================
+// 1. IMPORTS
+// ==========================
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -7,25 +9,32 @@ const pdfParse = require("pdf-parse");
 const axios = require("axios");
 require("dotenv").config();
 
-// 2. App setup
+// ==========================
+// 2. APP SETUP
+// ==========================
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 3. Multer
+// ==========================
+// 3. MULTER
+// ==========================
 const upload = multer({ dest: "uploads/" });
 
-// 4. Port
+// ==========================
+// 4. PORT
+// ==========================
 const PORT = process.env.PORT || 5000;
 
-// 5. Test route
+// ==========================
+// 5. TEST ROUTE
+// ==========================
 app.get("/", (req, res) => {
   res.send("Server running 🚀");
 });
 
-
 // ==========================
-// 🔁 REWRITE API (still mock for now)
+// 6. REWRITE API (MOCK)
 // ==========================
 app.post("/api/rewrite", (req, res) => {
   try {
@@ -36,7 +45,6 @@ app.post("/api/rewrite", (req, res) => {
     }
 
     const rewrittenText = simulateAIRewrite(text, tone);
-
     res.json({ rewrittenText });
 
   } catch (error) {
@@ -45,9 +53,8 @@ app.post("/api/rewrite", (req, res) => {
   }
 });
 
-
 // ==========================
-// 📄 UPLOAD + AI PARSING
+// 7. UPLOAD + AI PARSING
 // ==========================
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
@@ -57,20 +64,21 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // Read PDF
     const fileBuffer = fs.readFileSync(req.file.path);
     const data = await pdfParse(fileBuffer);
     const extractedText = data.text || "";
 
-    // 🔥 CALL AI
+    console.log("Extracted text preview:", extractedText.slice(0, 200));
+
+    // 🔥 Call AI
     let structuredData = await callAIForParsing(extractedText);
 
-    // 🛟 FALLBACK (if AI fails)
+    // 🛟 fallback
     if (!structuredData) {
       structuredData = extractStructuredData(extractedText);
     }
 
-    // 🧹 delete temp file
+    // 🧹 cleanup
     fs.unlinkSync(req.file.path);
 
     res.json({
@@ -89,62 +97,35 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
   }
 });
 
-
 // ==========================
-// 🤖 AI FUNCTION (OpenRouter)
+// 8. AI FUNCTION (FIXED)
 // ==========================
 async function callAIForParsing(text) {
   try {
     const prompt = `
 You are an expert resume parser.
 
-Extract structured JSON from the resume.
+Return ONLY valid JSON. No explanation. No markdown.
 
-RULES:
-- Return ONLY valid JSON (no explanation, no text)
-- Fill missing fields with empty values
-- Be smart in extracting skills, projects, education, and experience
-- Convert bullet points into arrays
-- Infer project tech stack if mentioned
-
-FORMAT:
+Format:
 {
   "name": "",
   "email": "",
-  "summary": "2 sentence professional summary",
-  "skills": ["", ""],
-  "projects": [
-    {
-      "title": "",
-      "description": "",
-      "tech": []
-    }
-  ],
-  "education": [
-    {
-      "degree": "",
-      "college": "",
-      "year": ""
-    }
-  ],
-  "experience": [
-    {
-      "role": "",
-      "company": "",
-      "duration": "",
-      "points": []
-    }
-  ]
+  "summary": "",
+  "skills": [],
+  "projects": [],
+  "education": [],
+  "experience": []
 }
 
 Resume:
-${text.slice(0, 4000)}
+${text.slice(0, 3000)}
 `;
 
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "mistralai/mistral-7b-instruct",
+        model: "openchat/openchat-3.5",
         messages: [{ role: "user", content: prompt }]
       },
       {
@@ -155,42 +136,48 @@ ${text.slice(0, 4000)}
       }
     );
 
-    let aiText = response.data.choices[0].message.content;
+    console.log("FULL AI RESPONSE:", JSON.stringify(response.data, null, 2));
 
-    // 🧹 clean markdown if exists
+    let aiText = response.data.choices?.[0]?.message?.content;
+
+    if (!aiText) {
+      console.error("AI returned empty response");
+      return null;
+    }
+
     aiText = aiText.replace(/```json|```/g, "").trim();
 
+    console.log("CLEANED AI TEXT:", aiText);
+
     try {
-  const cleaned = aiText.replace(/```json|```/g, "").trim();
-  return JSON.parse(cleaned);
-} catch (err) {
-  console.error("JSON parse failed:", aiText);
-  return null;
-}
+      return JSON.parse(aiText);
+    } catch (err) {
+      console.error("JSON PARSE FAILED:", aiText);
+      return null;
+    }
 
   } catch (error) {
-    console.error("AI error:", error.response?.data || error.message);
+    console.error("AI ERROR:", error.response?.data || error.message);
     return null;
   }
 }
 
-
 // ==========================
-// 🧠 FALLBACK PARSER
+// 9. FALLBACK PARSER
 // ==========================
 function extractStructuredData(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  let name = lines[0] || "";
+  const name = lines[0] || "";
 
   const emailMatch = text.match(/\S+@\S+\.\S+/);
   const email = emailMatch ? emailMatch[0] : "";
 
+  let skills = [];
   const skillLine = lines.find(line =>
     line.toLowerCase().includes("skill")
   );
 
-  let skills = [];
   if (skillLine && skillLine.includes(":")) {
     skills = skillLine
       .split(":")[1]
@@ -210,9 +197,8 @@ function extractStructuredData(text) {
   };
 }
 
-
 // ==========================
-// 🎭 MOCK REWRITE (temporary)
+// 10. MOCK REWRITE
 // ==========================
 function simulateAIRewrite(text, tone) {
   if (tone === "professional") {
@@ -227,9 +213,8 @@ function simulateAIRewrite(text, tone) {
   return text;
 }
 
-
 // ==========================
-// 🚀 START SERVER
+// 11. START SERVER
 // ==========================
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
