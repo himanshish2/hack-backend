@@ -1,30 +1,32 @@
-// 1. Import packages
+// 1. Imports
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
+const axios = require("axios");
 require("dotenv").config();
 
-// 2. Create app
+// 2. App setup
 const app = express();
-
-// 3. Middleware
 app.use(cors());
 app.use(express.json());
 
-// 4. Multer setup
+// 3. Multer
 const upload = multer({ dest: "uploads/" });
 
-// 5. Port
+// 4. Port
 const PORT = process.env.PORT || 5000;
 
-// 6. Test route
+// 5. Test route
 app.get("/", (req, res) => {
   res.send("Server running 🚀");
 });
 
-// 7. Rewrite API
+
+// ==========================
+// 🔁 REWRITE API (still mock for now)
+// ==========================
 app.post("/api/rewrite", (req, res) => {
   try {
     const { text, tone } = req.body;
@@ -43,7 +45,10 @@ app.post("/api/rewrite", (req, res) => {
   }
 });
 
-// 8. Upload + PDF parse
+
+// ==========================
+// 📄 UPLOAD + AI PARSING
+// ==========================
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
     console.log("File received:", req.file);
@@ -52,15 +57,20 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    // Read PDF
     const fileBuffer = fs.readFileSync(req.file.path);
     const data = await pdfParse(fileBuffer);
-
     const extractedText = data.text || "";
 
-    // 🧠 Convert to structured JSON
-    const structuredData = extractStructuredData(extractedText);
+    // 🔥 CALL AI
+    let structuredData = await callAIForParsing(extractedText);
 
-    // 🧹 OPTIONAL: delete uploaded file (important in real apps)
+    // 🛟 FALLBACK (if AI fails)
+    if (!structuredData) {
+      structuredData = extractStructuredData(extractedText);
+    }
+
+    // 🧹 delete temp file
     fs.unlinkSync(req.file.path);
 
     res.json({
@@ -79,40 +89,74 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
   }
 });
 
-// 9. Mock AI function
-function simulateAIRewrite(text, tone) {
-  if (tone === "professional") {
-    return `Developed and delivered: ${text}`;
-  }
-  if (tone === "casual") {
-    return `Basically, I worked on this: ${text}`;
-  }
-  if (tone === "bold") {
-    return `🚀 Built something impactful: ${text}`;
-  }
-  return text;
+
+// ==========================
+// 🤖 AI FUNCTION (OpenRouter)
+// ==========================
+async function callAIForParsing(text) {
+  try {
+    const prompt = `
+Extract structured JSON from this resume.
+
+Return ONLY valid JSON:
+{
+  "name": "",
+  "email": "",
+  "summary": "",
+  "skills": [],
+  "projects": [],
+  "education": [],
+  "experience": []
 }
 
-// 10. Extract structured data
+Resume:
+${text.slice(0, 4000)}
+`;
+
+    const response = await axios.post(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        model: "mistralai/mistral-7b-instruct",
+        messages: [{ role: "user", content: prompt }]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    let aiText = response.data.choices[0].message.content;
+
+    // 🧹 clean markdown if exists
+    aiText = aiText.replace(/```json|```/g, "").trim();
+
+    return JSON.parse(aiText);
+
+  } catch (error) {
+    console.error("AI error:", error.response?.data || error.message);
+    return null;
+  }
+}
+
+
+// ==========================
+// 🧠 FALLBACK PARSER
+// ==========================
 function extractStructuredData(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  let name = "";
-  let email = "";
-  let skills = [];
+  let name = lines[0] || "";
 
-  // Name = first line
-  name = lines[0] || "";
-
-  // Email (regex)
   const emailMatch = text.match(/\S+@\S+\.\S+/);
-  email = emailMatch ? emailMatch[0] : "";
+  const email = emailMatch ? emailMatch[0] : "";
 
-  // Skills detection
   const skillLine = lines.find(line =>
     line.toLowerCase().includes("skill")
   );
 
+  let skills = [];
   if (skillLine && skillLine.includes(":")) {
     skills = skillLine
       .split(":")[1]
@@ -132,7 +176,27 @@ function extractStructuredData(text) {
   };
 }
 
-// 11. Start server
+
+// ==========================
+// 🎭 MOCK REWRITE (temporary)
+// ==========================
+function simulateAIRewrite(text, tone) {
+  if (tone === "professional") {
+    return `Developed and delivered: ${text}`;
+  }
+  if (tone === "casual") {
+    return `Basically, I worked on this: ${text}`;
+  }
+  if (tone === "bold") {
+    return `🚀 Built something impactful: ${text}`;
+  }
+  return text;
+}
+
+
+// ==========================
+// 🚀 START SERVER
+// ==========================
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);
 });
