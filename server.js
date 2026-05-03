@@ -129,30 +129,90 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
 async function callAIForParsing(text) {
   try {
     const prompt = `
-You are a resume parser.
+You are an expert Resume-to-Portfolio AI system.
 
-Return ONLY valid JSON:
+Your job is to convert raw resume text into a PERFECT structured JSON that can be directly used in a portfolio website.
+
+🚨 STRICT RULES:
+- Return ONLY valid JSON (no markdown, no explanation)
+- Never include extra text
+- Always follow the schema exactly
+- If data is missing, use empty strings or empty arrays
+- NEVER put long sentences inside arrays unless required
+- Always extract and structure intelligently
+
+---
+
+📦 OUTPUT FORMAT (MUST FOLLOW EXACTLY):
 
 {
   "name": "",
   "email": "",
   "summary": "",
   "skills": [],
-  "projects": [],
-  "education": [],
-  "experience": []
+  "projects": [
+    {
+      "title": "",
+      "description": "",
+      "tech": []
+    }
+  ],
+  "education": [
+    {
+      "degree": "",
+      "college": "",
+      "year": ""
+    }
+  ],
+  "experience": [
+    {
+      "role": "",
+      "company": "",
+      "duration": "",
+      "points": []
+    }
+  ]
 }
 
-Resume:
-${text.slice(0, 3000)}
+---
+
+🧠 INTELLIGENCE RULES:
+
+1. SUMMARY:
+- Write a 2-line professional summary
+- Highlight role, skills, and domain
+
+2. SKILLS:
+- Extract ALL technical + soft skills
+- Remove duplicates
+- Normalize names (e.g. "js" → "JavaScript")
+
+3. PROJECTS:
+- Convert each project into OBJECT
+- Infer title if missing
+- Extract tech stack separately
+- Keep description clean and short
+
+4. EXPERIENCE:
+- Convert bullet points into array
+- Extract company, role, duration if possible
+
+5. EDUCATION:
+- Always structure properly if found
+
+---
+
+📄 RESUME TEXT:
+${text.slice(0, 4000)}
 `;
+
 
     console.log("🚀 Sending request to Groq...");
 
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "llama3-8b-8192",
+        model: "llama-3.1-8b-instant",
         messages: [
           { role: "user", content: prompt }
         ],
