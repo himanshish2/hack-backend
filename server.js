@@ -58,7 +58,7 @@ app.post("/api/rewrite", (req, res) => {
 // ==========================
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
-    console.log("File received:", req.file);
+    console.log("STRUCTURED DATA FROM AI:", structuredData);
 
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -103,11 +103,11 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
 async function callAIForParsing(text) {
   try {
     const prompt = `
-You are an expert resume parser.
+You are a resume parser.
 
-Return ONLY valid JSON. No explanation. No markdown.
+Extract structured JSON ONLY.
 
-Format:
+Return format:
 {
   "name": "",
   "email": "",
@@ -125,8 +125,11 @@ ${text.slice(0, 3000)}
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openchat/openchat-3.5",
-        messages: [{ role: "user", content: prompt }]
+        model: "mistralai/mistral-7b-instruct", // stable free model
+        messages: [
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.2
       },
       {
         headers: {
@@ -136,28 +139,27 @@ ${text.slice(0, 3000)}
       }
     );
 
-    console.log("FULL AI RESPONSE:", JSON.stringify(response.data, null, 2));
+    console.log("RAW AI RESPONSE:");
+    console.log(JSON.stringify(response.data, null, 2));
 
-    let aiText = response.data.choices?.[0]?.message?.content;
+    let aiText = response.data?.choices?.[0]?.message?.content;
 
     if (!aiText) {
-      console.error("AI returned empty response");
+      console.log("❌ AI returned empty response");
       return null;
     }
 
     aiText = aiText.replace(/```json|```/g, "").trim();
 
-    console.log("CLEANED AI TEXT:", aiText);
+    console.log("CLEAN AI TEXT:");
+    console.log(aiText);
 
-    try {
-      return JSON.parse(aiText);
-    } catch (err) {
-      console.error("JSON PARSE FAILED:", aiText);
-      return null;
-    }
+    const parsed = JSON.parse(aiText);
+    return parsed;
 
-  } catch (error) {
-    console.error("AI ERROR:", error.response?.data || error.message);
+  } catch (err) {
+    console.log("❌ AI ERROR:");
+    console.log(err.response?.data || err.message);
     return null;
   }
 }
@@ -168,20 +170,21 @@ ${text.slice(0, 3000)}
 function extractStructuredData(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  const name = lines[0] || "";
+  const email = text.match(/\S+@\S+\.\S+/)?.[0] || "";
 
-  const emailMatch = text.match(/\S+@\S+\.\S+/);
-  const email = emailMatch ? emailMatch[0] : "";
+  const name = lines.find(l =>
+    l.length > 2 &&
+    !l.includes("@") &&
+    !l.toLowerCase().includes("skill")
+  ) || "Unknown";
 
+  // better skill detection
   let skills = [];
-  const skillLine = lines.find(line =>
-    line.toLowerCase().includes("skill")
-  );
+  const skillMatch = text.match(/skills?:([\s\S]*?)(education|experience|projects|$)/i);
 
-  if (skillLine && skillLine.includes(":")) {
-    skills = skillLine
-      .split(":")[1]
-      .split(",")
+  if (skillMatch?.[1]) {
+    skills = skillMatch[1]
+      .split(/,|\n/)
       .map(s => s.trim())
       .filter(Boolean);
   }
