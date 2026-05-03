@@ -7,40 +7,49 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
+const path = require("path");
 const pdfParse = require("pdf-parse");
 const axios = require("axios");
 
 // ==========================
-// 2. DEBUG ENV
+// 2. ENSURE UPLOAD FOLDER
+// ==========================
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+// ==========================
+// 3. DEBUG ENV
 // ==========================
 console.log("👉 GROQ KEY LOADED:", !!process.env.GROQ_API_KEY);
 
 // ==========================
-// 3. APP SETUP
+// 4. APP SETUP
 // ==========================
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ==========================
-// 4. MULTER SETUP
+// 5. MULTER SETUP
 // ==========================
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ dest: uploadDir });
 
 // ==========================
-// 5. PORT
+// 6. PORT
 // ==========================
 const PORT = process.env.PORT || 5000;
 
 // ==========================
-// 6. TEST ROUTE
+// 7. HEALTH CHECK (IMPORTANT)
 // ==========================
 app.get("/", (req, res) => {
   res.send("Server running 🚀");
 });
 
 // ==========================
-// 7. REWRITE API
+// 8. REWRITE API
 // ==========================
 app.post("/api/rewrite", (req, res) => {
   try {
@@ -60,53 +69,38 @@ app.post("/api/rewrite", (req, res) => {
 });
 
 // ==========================
-// 8. UPLOAD + PDF + AI
+// 9. UPLOAD + PDF + AI
 // ==========================
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
+  let filePath = "";
+
   try {
     console.log("📥 Upload request received");
 
     if (!req.file) {
-      console.log("❌ No file uploaded");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    filePath = req.file.path;
     console.log("📄 File received:", req.file.originalname);
 
-    // 1. Read PDF
-    const fileBuffer = fs.readFileSync(req.file.path);
+    // Read PDF
+    const fileBuffer = fs.readFileSync(filePath);
 
-    // 2. Extract text
+    // Extract text
     const data = await pdfParse(fileBuffer);
     const extractedText = data.text || "";
 
-    console.log("📌 PDF TEXT PREVIEW:");
-    console.log(extractedText.slice(0, 200));
+    console.log("📌 TEXT PREVIEW:", extractedText.slice(0, 200));
 
-    // 3. AI CALL TRACE START
-    console.log("🔥 Calling AI parser...");
-
+    // AI call
     let structuredData = await callAIForParsing(extractedText);
 
-    // 4. AI RESULT CHECK
-    if (structuredData) {
-      console.log("✅ AI SUCCESS");
-    } else {
-      console.log("⚠️ AI FAILED → using fallback parser");
+    if (!structuredData) {
+      console.log("⚠️ AI failed → fallback");
       structuredData = extractStructuredData(extractedText);
     }
 
-    console.log("📊 FINAL STRUCTURED DATA:");
-    console.log(JSON.stringify(structuredData, null, 2));
-
-    // 5. Cleanup safely
-    try {
-      fs.unlinkSync(req.file.path);
-    } catch (err) {
-      console.log("⚠️ File cleanup failed (ignore)");
-    }
-
-    // 6. Response
     return res.json({
       message: "PDF processed successfully",
       preview: extractedText.slice(0, 300),
@@ -114,108 +108,42 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Upload error FULL:", error);
+    console.error("❌ Upload error:", error.message);
 
     return res.status(500).json({
       error: "Failed to process PDF",
       details: error.message
     });
+
+  } finally {
+    // Cleanup ALWAYS runs
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (err) {
+        console.log("⚠️ Cleanup failed");
+      }
+    }
   }
 });
 
 // ==========================
-// 9. GROQ AI FUNCTION (FIXED)
+// 10. GROQ AI FUNCTION
 // ==========================
 async function callAIForParsing(text) {
   try {
-    const prompt = `
-You are an expert Resume-to-Portfolio AI system.
-
-Your job is to convert raw resume text into a PERFECT structured JSON that can be directly used in a portfolio website.
-
-🚨 STRICT RULES:
-- Return ONLY valid JSON (no markdown, no explanation)
-- Never include extra text
-- Always follow the schema exactly
-- If data is missing, use empty strings or empty arrays
-- NEVER put long sentences inside arrays unless required
-- Always extract and structure intelligently
-
----
-
-📦 OUTPUT FORMAT (MUST FOLLOW EXACTLY):
-
-{
-  "name": "",
-  "email": "",
-  "summary": "",
-  "skills": [],
-  "projects": [
-    {
-      "title": "",
-      "description": "",
-      "tech": []
+    if (!process.env.GROQ_API_KEY) {
+      console.log("❌ GROQ KEY MISSING");
+      return null;
     }
-  ],
-  "education": [
-    {
-      "degree": "",
-      "college": "",
-      "year": ""
-    }
-  ],
-  "experience": [
-    {
-      "role": "",
-      "company": "",
-      "duration": "",
-      "points": []
-    }
-  ]
-}
 
----
-
-🧠 INTELLIGENCE RULES:
-
-1. SUMMARY:
-- Write a 2-line professional summary
-- Highlight role, skills, and domain
-
-2. SKILLS:
-- Extract ALL technical + soft skills
-- Remove duplicates
-- Normalize names (e.g. "js" → "JavaScript")
-
-3. PROJECTS:
-- Convert each project into OBJECT
-- Infer title if missing
-- Extract tech stack separately
-- Keep description clean and short
-
-4. EXPERIENCE:
-- Convert bullet points into array
-- Extract company, role, duration if possible
-
-5. EDUCATION:
-- Always structure properly if found
-
----
-
-📄 RESUME TEXT:
-${text.slice(0, 4000)}
-`;
-
-
-    console.log("🚀 Sending request to Groq...");
+    const prompt = `Convert this resume into structured JSON:\n\n${text.slice(0, 4000)}`;
 
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         model: "llama-3.1-8b-instant",
-        messages: [
-          { role: "user", content: prompt }
-        ],
+        messages: [{ role: "user", content: prompt }],
         temperature: 0.2
       },
       {
@@ -226,10 +154,7 @@ ${text.slice(0, 4000)}
       }
     );
 
-    console.log("✅ Got response from Groq");
-
     let aiText = response.data?.choices?.[0]?.message?.content;
-
     if (!aiText) return null;
 
     aiText = aiText.replace(/```json|```/g, "").trim();
@@ -237,13 +162,13 @@ ${text.slice(0, 4000)}
     return JSON.parse(aiText);
 
   } catch (err) {
-    console.log("GROQ ERROR:", err.response?.data || err.message);
+    console.log("❌ GROQ ERROR:", err.response?.data || err.message);
     return null;
   }
 }
 
 // ==========================
-// 10. FALLBACK PARSER
+// 11. FALLBACK PARSER
 // ==========================
 function extractStructuredData(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
@@ -257,21 +182,11 @@ function extractStructuredData(text) {
       !l.toLowerCase().includes("skill")
     ) || "Unknown";
 
-  let skills = [];
-  const skillMatch = text.match(/skills?:([\s\S]*?)(education|experience|projects|$)/i);
-
-  if (skillMatch?.[1]) {
-    skills = skillMatch[1]
-      .split(/,|\n/)
-      .map(s => s.trim())
-      .filter(Boolean);
-  }
-
   return {
     name,
     email,
     summary: "",
-    skills,
+    skills: [],
     projects: [],
     education: [],
     experience: []
@@ -279,24 +194,18 @@ function extractStructuredData(text) {
 }
 
 // ==========================
-// 11. MOCK REWRITE
+// 12. MOCK REWRITE
 // ==========================
 function simulateAIRewrite(text, tone) {
-  if (tone === "professional") {
-    return `Developed and delivered: ${text}`;
-  }
-  if (tone === "casual") {
-    return `Basically, I worked on this: ${text}`;
-  }
-  if (tone === "bold") {
-    return `🚀 Built something impactful: ${text}`;
-  }
+  if (tone === "professional") return `Developed: ${text}`;
+  if (tone === "casual") return `Worked on: ${text}`;
+  if (tone === "bold") return `🚀 Built: ${text}`;
   return text;
 }
 
 // ==========================
-// 12. START SERVER
+// 13. START SERVER
 // ==========================
 app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
