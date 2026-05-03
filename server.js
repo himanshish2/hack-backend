@@ -42,7 +42,7 @@ const upload = multer({ dest: uploadDir });
 const PORT = process.env.PORT || 5000;
 
 // ==========================
-// 7. HEALTH CHECK (IMPORTANT)
+// 7. HEALTH CHECK
 // ==========================
 app.get("/", (req, res) => {
   res.send("Server running 🚀");
@@ -63,7 +63,7 @@ app.post("/api/rewrite", (req, res) => {
     res.json({ rewrittenText });
 
   } catch (error) {
-    console.error(error);
+    console.error("❌ Rewrite error:", error.message);
     res.status(500).json({ error: "Something went wrong" });
   }
 });
@@ -84,16 +84,13 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     filePath = req.file.path;
     console.log("📄 File received:", req.file.originalname);
 
-    // Read PDF
     const fileBuffer = fs.readFileSync(filePath);
 
-    // Extract text
     const data = await pdfParse(fileBuffer);
     const extractedText = data.text || "";
 
     console.log("📌 TEXT PREVIEW:", extractedText.slice(0, 200));
 
-    // AI call
     let structuredData = await callAIForParsing(extractedText);
 
     if (!structuredData) {
@@ -116,11 +113,10 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     });
 
   } finally {
-    // Cleanup ALWAYS runs
     if (filePath && fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);
-      } catch (err) {
+      } catch {
         console.log("⚠️ Cleanup failed");
       }
     }
@@ -193,7 +189,7 @@ ${text.slice(0, 4000)}
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "llama-3.1-8b-instant",
+        model: "llama-3.1-70b-versatile",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2
       },
@@ -214,18 +210,19 @@ ${text.slice(0, 4000)}
       return null;
     }
 
-    // 🧠 CLEAN RESPONSE
+    // 🔥 CLEAN RESPONSE
     aiText = aiText
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
 
-    // 🧠 EXTRACT JSON (handles garbage before/after)
+    // 🔥 EXTRACT PURE JSON
     const firstBrace = aiText.indexOf("{");
     const lastBrace = aiText.lastIndexOf("}");
 
     if (firstBrace === -1 || lastBrace === -1) {
       console.log("❌ No JSON detected");
+      console.log("RAW:", aiText);
       return null;
     }
 
@@ -233,17 +230,11 @@ ${text.slice(0, 4000)}
 
     try {
       const parsed = JSON.parse(jsonString);
-
-      // ✅ BASIC VALIDATION
-      if (!parsed.name) {
-        console.log("⚠️ AI returned weak data");
-      }
-
       return parsed;
 
-    } catch (parseErr) {
+    } catch (err) {
       console.log("❌ JSON PARSE FAILED");
-      console.log("RAW AI OUTPUT:", aiText);
+      console.log("BROKEN JSON:", jsonString);
       return null;
     }
 
