@@ -137,7 +137,58 @@ async function callAIForParsing(text) {
       return null;
     }
 
-    const prompt = `Convert this resume into structured JSON:\n\n${text.slice(0, 4000)}`;
+    const prompt = `
+You are a world-class AI that converts resumes into structured portfolio JSON.
+
+STRICT RULES:
+- Return ONLY valid JSON
+- NO markdown, NO explanation
+- DO NOT wrap in backticks
+- Ensure JSON is directly parsable
+- Fill missing values with "" or []
+
+OUTPUT FORMAT:
+{
+  "name": "",
+  "email": "",
+  "summary": "",
+  "skills": [],
+  "projects": [
+    {
+      "title": "",
+      "description": "",
+      "tech": []
+    }
+  ],
+  "education": [
+    {
+      "degree": "",
+      "college": "",
+      "year": ""
+    }
+  ],
+  "experience": [
+    {
+      "role": "",
+      "company": "",
+      "duration": "",
+      "points": []
+    }
+  ]
+}
+
+INTELLIGENCE:
+- Extract EVERYTHING useful
+- Normalize skills (JavaScript not JS)
+- Infer missing project titles
+- Make summary 2 lines max
+- Keep arrays clean and meaningful
+
+RESUME:
+${text.slice(0, 4000)}
+`;
+
+    console.log("🚀 Sending request to Groq...");
 
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
@@ -154,12 +205,47 @@ async function callAIForParsing(text) {
       }
     );
 
+    console.log("✅ Response received");
+
     let aiText = response.data?.choices?.[0]?.message?.content;
-    if (!aiText) return null;
 
-    aiText = aiText.replace(/```json|```/g, "").trim();
+    if (!aiText) {
+      console.log("❌ Empty AI response");
+      return null;
+    }
 
-    return JSON.parse(aiText);
+    // 🧠 CLEAN RESPONSE
+    aiText = aiText
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    // 🧠 EXTRACT JSON (handles garbage before/after)
+    const firstBrace = aiText.indexOf("{");
+    const lastBrace = aiText.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1) {
+      console.log("❌ No JSON detected");
+      return null;
+    }
+
+    const jsonString = aiText.slice(firstBrace, lastBrace + 1);
+
+    try {
+      const parsed = JSON.parse(jsonString);
+
+      // ✅ BASIC VALIDATION
+      if (!parsed.name) {
+        console.log("⚠️ AI returned weak data");
+      }
+
+      return parsed;
+
+    } catch (parseErr) {
+      console.log("❌ JSON PARSE FAILED");
+      console.log("RAW AI OUTPUT:", aiText);
+      return null;
+    }
 
   } catch (err) {
     console.log("❌ GROQ ERROR:", err.response?.data || err.message);
