@@ -58,8 +58,6 @@ app.post("/api/rewrite", (req, res) => {
 // ==========================
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
-    console.log("STRUCTURED DATA FROM AI:", structuredData);
-
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
@@ -70,18 +68,21 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
 
     console.log("Extracted text preview:", extractedText.slice(0, 200));
 
-    // 🔥 Call AI
+    // 🔥 Call AI FIRST
     let structuredData = await callAIForParsing(extractedText);
 
-    // 🛟 fallback
+    // 🛟 fallback if AI fails
     if (!structuredData) {
       structuredData = extractStructuredData(extractedText);
     }
 
+    // 🧪 DEBUG LOG (AFTER variable exists)
+    console.log("STRUCTURED DATA FROM AI:", structuredData);
+
     // 🧹 cleanup
     fs.unlinkSync(req.file.path);
 
-    res.json({
+    return res.json({
       message: "PDF processed successfully",
       preview: extractedText.slice(0, 300),
       structuredData
@@ -90,13 +91,12 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
   } catch (error) {
     console.error("Upload error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to process PDF",
       details: error.message
     });
   }
 });
-
 // ==========================
 // 8. AI FUNCTION (FIXED)
 // ==========================
