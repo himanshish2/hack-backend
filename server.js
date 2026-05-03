@@ -17,7 +17,7 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================
-// 3. MULTER
+// 3. MULTER SETUP
 // ==========================
 const upload = multer({ dest: "uploads/" });
 
@@ -54,7 +54,7 @@ app.post("/api/rewrite", (req, res) => {
 });
 
 // ==========================
-// 7. UPLOAD + AI PARSING
+// 7. UPLOAD + PDF + AI
 // ==========================
 app.post("/api/upload", upload.single("resume"), async (req, res) => {
   try {
@@ -66,20 +66,16 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     const data = await pdfParse(fileBuffer);
     const extractedText = data.text || "";
 
-    console.log("Extracted text preview:", extractedText.slice(0, 200));
+    console.log("PDF TEXT PREVIEW:", extractedText.slice(0, 200));
 
-    // 🔥 Call AI FIRST
     let structuredData = await callAIForParsing(extractedText);
 
-    // 🛟 fallback if AI fails
     if (!structuredData) {
       structuredData = extractStructuredData(extractedText);
     }
 
-    // 🧪 DEBUG LOG (AFTER variable exists)
-    console.log("STRUCTURED DATA FROM AI:", structuredData);
+    console.log("FINAL STRUCTURED DATA:", structuredData);
 
-    // 🧹 cleanup
     fs.unlinkSync(req.file.path);
 
     return res.json({
@@ -97,17 +93,17 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     });
   }
 });
+
 // ==========================
-// 8. AI FUNCTION (FIXED)
+// 8. GROQ AI FUNCTION (FIXED)
 // ==========================
 async function callAIForParsing(text) {
   try {
     const prompt = `
 You are a resume parser.
 
-Extract structured JSON ONLY.
+Return ONLY valid JSON:
 
-Return format:
 {
   "name": "",
   "email": "",
@@ -123,9 +119,9 @@ ${text.slice(0, 3000)}
 `;
 
     const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "mistralai/mistral-7b-instruct", // stable free model
+        model: "llama3-8b-8192",
         messages: [
           { role: "user", content: prompt }
         ],
@@ -133,33 +129,24 @@ ${text.slice(0, 3000)}
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
           "Content-Type": "application/json"
         }
       }
     );
 
-    console.log("RAW AI RESPONSE:");
-    console.log(JSON.stringify(response.data, null, 2));
+    console.log("GROQ RAW RESPONSE RECEIVED");
 
     let aiText = response.data?.choices?.[0]?.message?.content;
 
-    if (!aiText) {
-      console.log("❌ AI returned empty response");
-      return null;
-    }
+    if (!aiText) return null;
 
     aiText = aiText.replace(/```json|```/g, "").trim();
 
-    console.log("CLEAN AI TEXT:");
-    console.log(aiText);
-
-    const parsed = JSON.parse(aiText);
-    return parsed;
+    return JSON.parse(aiText);
 
   } catch (err) {
-    console.log("❌ AI ERROR:");
-    console.log(err.response?.data || err.message);
+    console.log("GROQ ERROR:", err.response?.data || err.message);
     return null;
   }
 }
@@ -172,13 +159,13 @@ function extractStructuredData(text) {
 
   const email = text.match(/\S+@\S+\.\S+/)?.[0] || "";
 
-  const name = lines.find(l =>
-    l.length > 2 &&
-    !l.includes("@") &&
-    !l.toLowerCase().includes("skill")
-  ) || "Unknown";
+  const name =
+    lines.find(l =>
+      l.length > 2 &&
+      !l.includes("@") &&
+      !l.toLowerCase().includes("skill")
+    ) || "Unknown";
 
-  // better skill detection
   let skills = [];
   const skillMatch = text.match(/skills?:([\s\S]*?)(education|experience|projects|$)/i);
 
