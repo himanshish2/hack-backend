@@ -28,8 +28,25 @@ console.log("👉 GROQ KEY LOADED:", !!process.env.GROQ_API_KEY);
 // 4. APP SETUP
 // ==========================
 const app = express();
+
 app.use(cors());
-app.use(express.json());
+
+// ✅ ADDED: Better CORS handling for Vercel ↔ Render connection
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
+// ✅ ADDED: safer request limits (important for resume uploads)
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ==========================
 // 5. MULTER SETUP
@@ -210,13 +227,11 @@ ${text.slice(0, 4000)}
       return null;
     }
 
-    // 🔥 CLEAN RESPONSE
     aiText = aiText
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
 
-    // 🔥 EXTRACT PURE JSON
     const firstBrace = aiText.indexOf("{");
     const lastBrace = aiText.lastIndexOf("}");
 
