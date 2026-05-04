@@ -4,12 +4,11 @@
 require("dotenv").config();
 
 const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
+const multer  = require("multer");
+const fs      = require("fs");
+const path    = require("path");
 const pdfParse = require("pdf-parse");
-const axios = require("axios");
+const axios   = require("axios");
 
 // ==========================
 // 2. ENSURE UPLOAD FOLDER
@@ -29,22 +28,18 @@ console.log("👉 GROQ KEY LOADED:", !!process.env.GROQ_API_KEY);
 // ==========================
 const app = express();
 
-app.use(cors());
-
-// ✅ ADDED: Better CORS handling for Vercel ↔ Render connection
+// ✅ FIX: removed redundant cors() package call — the manual headers below
+// already handle everything cors() was doing, so we only need one approach.
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
+  if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 
-// ✅ ADDED: safer request limits (important for resume uploads)
+// ✅ FIX: moved body parsers BEFORE route definitions so req.body is
+// always populated when /api/rewrite (or any JSON route) is hit.
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -102,7 +97,6 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
     console.log("📄 File received:", req.file.originalname);
 
     const fileBuffer = fs.readFileSync(filePath);
-
     const data = await pdfParse(fileBuffer);
     const extractedText = data.text || "";
 
@@ -123,7 +117,6 @@ app.post("/api/upload", upload.single("resume"), async (req, res) => {
 
   } catch (error) {
     console.error("❌ Upload error:", error.message);
-
     return res.status(500).json({
       error: "Failed to process PDF",
       details: error.message
@@ -233,7 +226,7 @@ ${text.slice(0, 4000)}
       .trim();
 
     const firstBrace = aiText.indexOf("{");
-    const lastBrace = aiText.lastIndexOf("}");
+    const lastBrace  = aiText.lastIndexOf("}");
 
     if (firstBrace === -1 || lastBrace === -1) {
       console.log("❌ No JSON detected");
@@ -244,9 +237,7 @@ ${text.slice(0, 4000)}
     const jsonString = aiText.slice(firstBrace, lastBrace + 1);
 
     try {
-      const parsed = JSON.parse(jsonString);
-      return parsed;
-
+      return JSON.parse(jsonString);
     } catch (err) {
       console.log("❌ JSON PARSE FAILED");
       console.log("BROKEN JSON:", jsonString);
@@ -290,8 +281,8 @@ function extractStructuredData(text) {
 // ==========================
 function simulateAIRewrite(text, tone) {
   if (tone === "professional") return `Developed: ${text}`;
-  if (tone === "casual") return `Worked on: ${text}`;
-  if (tone === "bold") return `🚀 Built: ${text}`;
+  if (tone === "casual")       return `Worked on: ${text}`;
+  if (tone === "bold")         return `🚀 Built: ${text}`;
   return text;
 }
 
